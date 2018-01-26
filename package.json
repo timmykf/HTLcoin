@@ -1,0 +1,40 @@
+{
+  "name": "htlcoin",
+  "version": "1.0.0",
+  "description": "Cryptocurrency",
+  "main": "bc.js",
+  "scripts": {
+    "test": "node bc.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/timmykf/HTLcoin.git"
+  },
+  "keywords": [
+    "Blockchain",
+    "Crypto",
+    "nosafety"
+  ],
+  "author": "Asi, Fips, Weini",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/timmykf/HTLcoin/issues"
+  },
+  "homepage": "https://github.com/timmykf/HTLcoin#readme",
+  "dependencies": {
+    "body-parser": "^1.18.2",
+    "cors": "^2.8.4",
+    "crypto-js": "^3.1.9-1",
+    "ejs": "^2.5.7",
+    "express": "^4.16.2",
+    "express-session": "^1.15.6",
+    "fs": "0.0.1-security",
+    "ip": "^1.1.5",
+    "jsonfile": "^4.0.0",
+    "keypair": "^1.0.1",
+    "node-cron": "^1.2.1",
+    "node-forge": "^0.7.1",
+    "node-rsa": "^0.4.2",
+    "ws": "^4.0.0"
+  }
+}
