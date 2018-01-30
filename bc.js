@@ -11,11 +11,31 @@ var fs = require('fs');
 var ip = require('ip');
 var session = require('express-session');
 var nodeRSA = require('node-rsa');
+var cpu = require('os');
+var NodeRSA = require('node-rsa');
+var os = require('os');
+var crypto = require('crypto');
 
-/*var bcfile = './tmp/coinsafe.json';
+var cpus = cpu.cpus();
+
+
+if (os.platform() == 'win32') {  
+    var chilkat = require('chilkat_node6_win32'); 
+} else if (os.platform() == 'linux') {
+    if (os.arch() == 'arm') {
+        var chilkat = require('chilkat_node6_arm');
+    } else if (os.arch() == 'x86') {
+        var chilkat = require('chilkat_node6_linux32');
+    } else {
+        var chilkat = require('chilkat_node6_linux64');
+    }
+} else if (os.platform() == 'darwin') {
+    var chilkat = require('chilkat_node6_macosx');
+}
+
+var bcfile = './tmp/coinsafe.json';
 var debugfl = './tmp/hcoinsave.txt';
 var peersfl = './tmp/standpeers.json';
-*/
 
 var task = cron.schedule('*/3 * * * *',function(){
     console.log("tmpsave"+":"+new Date().getTime() / 1000);
@@ -44,6 +64,8 @@ var MessageType = {
     RESPONSE_BLOCKCHAIN: 2
 };
 
+var UserID = 0;
+
 var urlencodedParser = bodyParser.urlencoded({extended:false});
 
 var getGenesisBlock = () => {
@@ -67,9 +89,44 @@ var initHttpServer = () => {
     })
     app.post('/CreateUser',urlencodedParser , (req,res)=>{
         console.log(req.body);
+        var pass = req.body.passwort;
         //create key value pair
-        var key = new NodeRSA({b: 512});
-        console.log(key);
+        nodeRSAKey((err,key)=>{
+            if(err)throw err;
+            console.log(key);
+            createPassphrase(pass,(err,passdata) => {
+                console.log(passdata);
+                encryptPrivKey(passdata.key,key.exportKey('pkcs8'),(err,encPrivKey)=>{
+                    if(err)throw err;
+                    console.log(encPrivKey);
+                    var pk = key.exportKey('pkcs8-public');
+                    var publicComp = key.exportKey('components-public');
+                    var add = getaddress(pass);
+                    var userinfo = {
+                        address:add,
+                        cash:100000000000
+                    }
+                    var publicK = {
+                        PublicKey:pk,
+                        publicComponents:publicComp
+                    }
+                    var userJson = {
+                        publicKey:publicK,
+                        User:userinfo,
+                        PassData:passdata,
+                        encPrivKeyData:encPrivKey,
+                    }
+                    console.log(userJson);
+                    getfilepath(add.Hash,(err,path)=>{
+                        if(err)throw err;
+                        console.log(path);
+                        writeintojson(path,userJson,(err)=>{
+                            console.log('User:  '+add.Hash+'saved!!!');
+                        })
+                    });
+                })
+            }
+        )})
 
         //create json file with info
 
@@ -134,6 +191,102 @@ var initHttpServer = () => {
     });
     app.listen(http_port,ip.address(), () => console.log('Listening on: '+ ip.address()+':'+ http_port));
 };
+
+var getfilepath = (address,cb) =>{
+    var path = './user/user_'+address+'.json';
+    console.log(path);
+    fs.writeFile(path,"sadasdasd",(err)=>{
+        if(err)throw err;
+        console.log("File created");
+        cb(null,path);
+    })
+}
+
+var getaddress = (password) =>{
+    var salt = crypto.randomBytes(16);
+    return {
+        Hash:CryptoJS.SHA256(password + salt).toString(),
+        salt:salt
+    }
+}
+
+var nodeRSAKey = (cb) => {
+    var key =new NodeRSA({b: 256});
+    cb(null,key);
+} 
+
+var createPassphrase = (passphrase,cb) => {
+
+    var salt = crypto.randomBytes(16);
+
+    var iterations = 137;
+    var keyByteLength = 32; 
+    var x;
+
+    crypto.pbkdf2(passphrase, salt, iterations, keyByteLength, 'sha256', function (err, bytes) {
+        x = bytes.toString('hex')
+        console.log(x+' x');
+        var passdata = { 
+            key:x,
+            salt:salt,
+            ilter:iterations,
+            keybyteLength:keyByteLength,
+        };
+        cb(null,passdata)
+    });
+}
+
+
+var encryptPrivKey = (keyphrase,privatKey,cb) => {
+
+    var crypt = new chilkat.Crypt2();
+
+    var success = crypt.UnlockComponent("Anything for 30-day trial");
+    if (success !== true) {
+        console.log(crypt.LastErrorText);
+        return;
+    }
+    crypt.CryptAlgorithm = "aes";
+
+    crypt.CipherMode = "ctr";
+
+    crypt.KeyLength = 256;
+    crypt.EncodingMode = "hex";
+
+    crypto.randomBytes(16);
+    var ivHex = crypto.randomBytes(16);
+    crypt.SetEncodedIV(ivHex,"hex");
+
+    var keyHex = keyphrase;
+    crypt.SetEncodedKey(keyHex,"hex");
+
+    var encStr = crypt.EncryptStringENC(privatKey);
+    console.log(encStr+ '  ency');
+
+    var encPrivKey = {
+        encPrivKey:encStr,
+        Algo:crypt.CryptAlgorithm,
+        Mode:crypt.CipherMode,
+        Lenght:crypt.KeyLength,
+        EncMode:crypt.EncodingMode,
+        iv:ivHex
+    }
+    cb(null,encPrivKey);
+    
+
+    /*
+    var decrypt = new chilkat.Crypt2();
+    decrypt.CryptAlgorithm = "aes";
+    decrypt.CipherMode = "ctr";
+    decrypt.KeyLength = 128;
+    decrypt.EncodingMode = "hex";
+    decrypt.SetEncodedIV(ivHex,"hex");
+    decrypt.SetEncodedKey(keyHex,"hex");
+
+    //  Now decrypt:
+    var decStr = decrypt.DecryptStringENC(encStr);
+    console.log(decStr+ '  2');*/
+}
 
 
 var initP2PServer = () => {
@@ -234,6 +387,8 @@ var connectToPeers = (newPeers) => {
     });
 };
 
+
+
 var handleBlockchainResponse = (message) => {
     var receivedBlocks = JSON.parse(message.data).sort((b1, b2) => (b1.index - b2.index));
     var latestBlockReceived = receivedBlocks[receivedBlocks.length - 1];
@@ -289,6 +444,8 @@ var isValidChain = (blockchainToValidate) => {
     return true;
 };
 
+
+
 var getLatestBlock = () => blockchain[blockchain.length - 1];
 var queryChainLengthMsg = () => ({'type': MessageType.QUERY_LATEST});
 var queryAllMsg = () => ({'type': MessageType.QUERY_ALL});
@@ -343,6 +500,14 @@ var writecontentbcf = (collbuk)=>{
     })
 }
 
+var writeintojson = (filepath,data,cb)=>{
+    jsonfl.writeFile(filepath,data,(err)=>{
+        if(err)throw err;
+        console.log("super")
+        cb(null);
+    })
+}
+
 connectToPeers(initialPeers);
 initHttpServer();
 initP2PServer();
@@ -363,5 +528,7 @@ readpeers((err,obj)=>{
         }}
 })
 */
+
+
 
 
