@@ -61,7 +61,8 @@ var sockets = [];
 var MessageType = {
     QUERY_LATEST: 0,
     QUERY_ALL: 1,
-    RESPONSE_BLOCKCHAIN: 2
+    RESPONSE_BLOCKCHAIN: 2,
+    RESPONSE_USERDATA: 3
 };
 
 var UserID = 0;
@@ -104,7 +105,7 @@ var initHttpServer = () => {
                     var add = getaddress(pass);
                     var userinfo = {
                         address:add,
-                        cash:100000000000
+                        cash:0
                     }
                     var publicK = {
                         PublicKey:pk,
@@ -113,32 +114,40 @@ var initHttpServer = () => {
                     var userJson = {
                         publicKey:publicK,
                         User:userinfo,
-                        PassData:passdata,
+                        PassData:{ 
+                            salt:passdata.salt,
+                            ilteration:passdata.ilter,
+                            keyByteLength:passdata.keybyteLength
+                        },
                         encPrivKeyData:encPrivKey,
                     }
                     console.log(userJson);
-                    getfilepath(add.Hash,(err,path)=>{
+                    var sign = createSign(key,userJson);
+                        console.log(sign);
+                        var fulluserJson = {
+                            userSRC:userJson,
+                            Usersign:sign
+                        }
+                        console.log(fulluserJson);
+                        getfilepath(add.Hash,(err,path)=>{
                         if(err)throw err;
                         console.log(path);
-                        writeintojson(path,userJson,(err)=>{
+                        writeintojson(path,fulluserJson,(err)=>{
                             console.log('User:  '+add.Hash+'saved!!!');
+                            broadcast(responsenewUser(fulluserJson));
+                            res.redirect('/');
                         })
                     });
+                    
+                    
                 })
             }
         )})
-
-        //create json file with info
-
-
-
         //show key to user(for some time)
 
         //send file to user
 
         //send json user file to bc(where it is stored everywhere)
-        
-
     })
 
     app.get('/createContract',urlencodedParser, (req,res)=>{
@@ -192,6 +201,14 @@ var initHttpServer = () => {
     app.listen(http_port,ip.address(), () => console.log('Listening on: '+ ip.address()+':'+ http_port));
 };
 
+var makekeyPrivAgain = (privateStr)=>{
+    var upkey = new NodeRSA(privateStr);
+}
+
+var createSign = (key,userJson) =>{
+    return key.sign(JSON.stringify(CryptoJS.SHA256(userJson).toString()));
+}
+
 var getfilepath = (address,cb) =>{
     var path = './user/user_'+address+'.json';
     console.log(path);
@@ -211,7 +228,7 @@ var getaddress = (password) =>{
 }
 
 var nodeRSAKey = (cb) => {
-    var key =new NodeRSA({b: 256});
+    var key =new NodeRSA({b: 512});
     cb(null,key);
 } 
 
@@ -321,6 +338,9 @@ var initMessageHandler = (ws) => {
             case MessageType.RESPONSE_BLOCKCHAIN:
                 handleBlockchainResponse(message);
                 break;
+            case MessageType.RESPONSE_USERDATA:
+                handleUserdataResponse(message);
+                break;
         }
     });
 };
@@ -387,6 +407,11 @@ var connectToPeers = (newPeers) => {
     });
 };
 
+
+var handleUserdataResponse = (message) => {
+    var receiveduserData = JSON.parse(message.data);
+    console.log(receiveduserData);
+}
 
 
 var handleBlockchainResponse = (message) => {
@@ -457,6 +482,11 @@ var responseLatestMsg = () => ({
     'data': JSON.stringify([getLatestBlock()])
 });
 
+var responsenewUser = (userInfo) => ({
+    'type': MessageType.RESPONSE_USERDATA,
+    'data': JSON.stringify(userInfo)
+})
+
 var write = (ws, message) => ws.send(JSON.stringify(message));
 var broadcast = (message) => sockets.forEach(socket => write(socket, message));
 
@@ -501,7 +531,7 @@ var writecontentbcf = (collbuk)=>{
 }
 
 var writeintojson = (filepath,data,cb)=>{
-    jsonfl.writeFile(filepath,data,(err)=>{
+    jsonfl.writeFile(filepath,data,{spaces: 2, EOL: '\r\n'},(err)=>{
         if(err)throw err;
         console.log("super")
         cb(null);
