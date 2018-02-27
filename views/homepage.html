@@ -80,8 +80,6 @@
   <script type='text/javascript' src='http://getbootstrap.com/dist/js/bootstrap.min.js'></script>
   <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
   <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
-  <script src="blockchain_homepage.js"></script>
-  <script src="blockchain_homepage.js"></script>
 
   <script>
     function getUserIP(onNewIP) { //  onNewIp - your listener function for new IPs
@@ -127,21 +125,42 @@
     });
 
     function registerSystem() {
-      if (document.getElementById('regpw1') === document.getElementById('regpw2')) {
+      alert("xs");
+      var pw = document.getElementById('regpw1').value;
+      alert('http://'+oip+':3001/CreateUser');
         $.ajax({
           type: 'POST',
-          url: 'http://' + oip + ':3001/register',
+          url: '/CreateUser',
           dataType: 'json',
           data: {
-            name: document.getElementById('regBname'),
-            email: document.getElementById('regMail'),
-            passwort: document.getElementById('regpw1')
+            passwort: pw
+          },
+          success: function(data){
+            $('#showhash').html=data;
           }
         });
-      }
-      else{
-        alert('fail')
-      }
+    }
+    function transCoins(){
+      alert('Wird gesendet');
+      var cash1 = document.getElementById('hc').value;
+      var towho = document.getElementById('address').value;
+      var pw = document.getElementById('pass').value;
+      var mess = document.getElementById('message').value;
+      alert("http://"+oip+":3001/cU");
+      $.ajax({
+        type: 'POST',
+        url: '/cU',
+        dataType: 'json',
+        data: {
+          password: pw,
+          address: towho,
+          cash: cash1,
+          message: mess
+        },
+        success:function(data){
+          console.log('gesendet')
+        }
+      });
     }
   </script>
 
@@ -182,27 +201,31 @@
   </div>
 
   <div id="sendCoins">
-    <form action="javascript:getCoins()">
+    <form onsubmit="transCoins();return false">
       <div class="input-group">
         <input type="number" id="hc" name="hcs" placeholder="0 Coins" min="1" required>
       </div>
       <br>
       <div class="input-group">
-        <input type="text" name="mail" placeholder="Email" required>
+        <input type="text" name="address" placeholder="address" id="address" required>
       </div>
       <br>
       <div class="input-group">
-        <input type="text" name="message" placeholder="Nachricht hinzufügen" required>
+        <input type="text" name="message" id="message" placeholder="Nachricht hinzufügen" required>
+      </div>
+      <br>
+      <div class="input-group">
+        <input type="password" name="password" placeholder="Password" id="pass" required>
       </div>
       <br>
       <div class="input-group"></div>
-      <input type="submit" name="submit" value="SENDEN" onsubmit="getCoins()">
+      <input type="submit" name="submit" value="SENDEN">
   </div>
   </form>
   </div>
 
   <div class="container" id="register-Box">
-    <form>
+    <form onsubmit="registerSystem();return false">
       <div class="input-group">
         <span class="input-group-addon">
           <i class="glyphicon glyphicon-envelope"></i>
@@ -223,9 +246,12 @@
         <input type="password" class="form-control" id="regpw2" name="confirm-password" placeholder="Passwort wiederholen" required>
       </div>
       <div class="input-group">
-        <button type="submit" class="btn btn-warning" style="background: rgb(228, 130, 2)">Registrieren</button>
+        <button type="submit" class="btn btn-warning"  style="background: rgb(228, 130, 2)">Registrieren</button>
       </div>
+    </form>
   </div>
+
+  <a id="showhash"></a>
 
   <footer class="footer">
     <p>5AHELS 2017/18</p>

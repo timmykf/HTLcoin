@@ -15,30 +15,16 @@ var cpu = require('os');
 var NodeRSA = require('node-rsa');
 var os = require('os');
 var crypto = require('crypto');
+var aescryp = require('node-cryptojs-aes')
 
-var cpus = cpu.cpus();
-
-
-if (os.platform() == 'win32') {  
-    var chilkat = require('chilkat_node6_win32'); 
-} else if (os.platform() == 'linux') {
-    if (os.arch() == 'arm') {
-        var chilkat = require('chilkat_node6_arm');
-    } else if (os.arch() == 'x86') {
-        var chilkat = require('chilkat_node6_linux32');
-    } else {
-        var chilkat = require('chilkat_node6_linux64');
-    }
-} else if (os.platform() == 'darwin') {
-    var chilkat = require('chilkat_node6_macosx');
-}
 
 var bcfile = './tmp/coinsafe.json';
 var debugfl = './tmp/hcoinsave.txt';
 var peersfl = './tmp/standpeers.json';
 
+let countdbginfo;
 var task = cron.schedule('*/3 * * * *',function(){
-    console.log("tmpsave"+":"+new Date().getTime() / 1000);
+    console.log("tmpsave"+":"+countdbginfo+'   '+new Date().getTime() / 1000);
 });
 
 task.start();
@@ -48,7 +34,7 @@ var p2p_port = process.env.P2P_PORT || 6001;
 var initialPeers = process.env.PEERS ? process.env.PEERS.split(',') : [];
 
 class Block {
-    constructor(index, previousHash, timestamp, data, hash) {
+    constructor(index, previousHash, timestamp, data , hash) {
         this.index = index;
         this.previousHash = previousHash.toString();
         this.timestamp = timestamp;
@@ -62,7 +48,8 @@ var MessageType = {
     QUERY_LATEST: 0,
     QUERY_ALL: 1,
     RESPONSE_BLOCKCHAIN: 2,
-    RESPONSE_USERDATA: 3
+    RESPONSE_USERDATA: 3,
+    RESPONSE_TRANSACTION: 4
 };
 
 var UserID = 0;
@@ -72,6 +59,10 @@ var urlencodedParser = bodyParser.urlencoded({extended:false});
 var getGenesisBlock = () => {
     return new Block(0, "0", 0, "thestartofeverythingis7", "816534932c2b7154836da6afc367695e6337db8a921823784c14378abed4f7d7");
 };
+
+var transactions = [];
+
+var usersalthash = [];
 
 var blockchain = [getGenesisBlock()];
 
@@ -86,26 +77,30 @@ var initHttpServer = () => {
         res.send(JSON.stringify(blockchain));
     });
     app.get('/',(req,res)=>{
+        console.log('Requested Site:'+ JSON.stringify(req.headers))
         res.render('homepage.html');
     })
     app.post('/CreateUser',urlencodedParser , (req,res)=>{
-        console.log(req.body);
         var pass = req.body.passwort;
         //create key value pair
         nodeRSAKey((err,key)=>{
             if(err)throw err;
-            console.log(key);
+           // console.log(key);
             createPassphrase(pass,(err,passdata) => {
-                console.log(passdata);
+                //console.log(passdata);
                 encryptPrivKey(passdata.key,key.exportKey('pkcs8'),(err,encPrivKey)=>{
                     if(err)throw err;
-                    console.log(encPrivKey);
+                    var encPrivdudu = JSON.parse(encPrivKey);
                     var pk = key.exportKey('pkcs8-public');
                     var publicComp = key.exportKey('components-public');
                     var add = getaddress(pass);
+                    usersalthash.push({
+                        salt:add.salt,
+                        hash:add.Hash
+                    });
                     var userinfo = {
                         address:add,
-                        cash:0
+                        cash:1000
                     }
                     var publicK = {
                         PublicKey:pk,
@@ -119,52 +114,95 @@ var initHttpServer = () => {
                             ilteration:passdata.ilter,
                             keyByteLength:passdata.keybyteLength
                         },
-                        encPrivKeyData:encPrivKey,
+                        encPrivKeyData:encPrivdudu,
                     }
-                    console.log(userJson);
                     var sign = createSign(key,userJson);
-                        console.log(sign);
-                        var fulluserJson = {
-                            userSRC:userJson,
-                            Usersign:sign
-                        }
-                        console.log(fulluserJson);
-                        getfilepath(add.Hash,(err,path)=>{
+                    var fulluserJson = {
+                        userSRC:userJson,
+                        Usersign:sign
+                    }
+                    console.log(fulluserJson);
+                    getfilepath(add.Hash,(err,path)=>{
                         if(err)throw err;
                         console.log(path);
                         writeintojson(path,fulluserJson,(err)=>{
-                            console.log('User:  '+add.Hash+'saved!!!');
+                            console.log('User:  '+add.Hash+' saved!!!');
                             broadcast(responsenewUser(fulluserJson));
-                            res.redirect('/');
+                            res.send(add.Hash);
                         })
                     });
-                    
-                    
                 })
             }
         )})
-        //show key to user(for some time)
-
-        //send file to user
-
-        //send json user file to bc(where it is stored everywhere)
     })
 
-    app.get('/createContract',urlencodedParser, (req,res)=>{
+    app.post('/cU',urlencodedParser, (req,res)=>{
         //to who and how much + password to json file
-
-        //get file from receiver(s)
-
-        //check if possible 
-
-        //if not sent error 
-
-        //subtract from the contrct files
-
-        //send transaction to everyone + safe into not quite finished block file to bc
-
-        //sent json file to bc
-
+        console.log('---------------------------------------------------------------')
+        checkaddress(req.body.password,(err,hash)=>{
+            if(err){
+                console.log('PW incorrect!!!°.°');
+                res.send('Incorrect PW')
+            };
+            console.log('Spender:   '+hash)
+            ckcrechash(req.body.address,(err)=>{
+                if(err)throw err;
+                getsamejson(hash,(err,obj)=>{
+                    if(err)throw err;
+                    let xcask = obj.userSRC.User.cash
+                    let cnt=0;
+                    transactions.forEach((t)=>{
+                        if(t.spender === hash){
+                            let c = parseInt(t.hm,10)
+                            cnt+=c;
+                        }
+                    })
+                    console.log(xcask-cnt)
+                    let wmon = parseInt(req.body.cash)
+                    console.log(cnt+wmon)
+                    if((wmon+cnt)<=xcask){
+                        cnt = 0;
+                        if(transactions.length<10){
+                            transactions.push({
+                                spender:hash,
+                                rec:req.body.address,
+                                hm:req.body.cash
+                            })
+                            //f
+                            console.log('NEW TRANSACTION: ----SPENDER---- '+hash+'  ----REC---- '+req.body.address+'  ----HM---- '+req.body.cash)
+                            broadcast(responseTrans({
+                                spender:hash,
+                                rec:req.body.address,
+                                hm:req.body.cash
+                            }))
+                        }else{
+                            console.log(transactions)
+                            let cunBlck = generateNextBlock(transactions);
+                            addBlock(cunBlck);
+                            broadcast(responseLatestMsg());
+                            transthethis(transactions);
+                            console.log('BLOCK ADDED: '+JSON.stringify(cunBlck))
+                            transactions.length=0;
+                            transactions.push({
+                                spender:hash,
+                                rec:req.body.address,
+                                hm:req.body.cash
+                            })
+                            console.log('NEW TRANSACTION: ----SPENDER---- '+hash+'  ----REC---- '+req.body.address+'  ----HM---- '+req.body.cash)
+                            broadcast(responseTrans({
+                                spender:hash,
+                                rec:req.body.address,
+                                hm:req.body.cash,
+                                index:transactions.length
+                            }))
+                        }
+                    }else{
+                        console.log('noe')
+                        res.send('Noe dat ged nid');
+                    }
+                })
+            })
+        })
     })
 
     app.get('/currentBlockmining',urlencodedParser, (req, res)=>{
@@ -177,15 +215,14 @@ var initHttpServer = () => {
         //if succesfull sends someonedidit!
     })
 
-    app.post('/mineBlock',urlencodedParser, (req, res) => {
-
+    /*app.post('/mineBlock',urlencodedParser, (req, res) => {
         console.log(req.body.name);
         var newBlock = generateNextBlock(req.body.name +":"+req.body.val);
         addBlock(newBlock);
         broadcast(responseLatestMsg());
         console.log('block added: ' + JSON.stringify(newBlock));
         res.send("DONE");
-    });
+    });*/
     app.get('/peers', (req, res) => {
         res.send(sockets.map(s => '-------'+s._socket.remoteAddress + ':' + s._socket.remotePort  + '-------\n\r'));
         console.log(sockets.map(s => s._socket.remoteAddress + ':' + s._socket.remotePort));
@@ -198,9 +235,119 @@ var initHttpServer = () => {
         connectToPeers([tpr]);
         res.send("DONE");
     });
-    app.listen(http_port,ip.address(), () => console.log('Listening on: '+ ip.address()+':'+ http_port));
+    app.listen(http_port,ip.address(), () => console.log('Listening on: '+ip.address()+':'+ http_port));
 };
 
+
+var createnewUserFile = (recobj)=>{
+    getfilepath(recobj.userSRC.User.address.hash,(err,path)=>{
+        if(err)throw err;
+        console.log(path);
+        writeintojson(path,recobj,(err)=>{
+            console.log('User:  '+recobj.userSRC.User.address.hash+' saved!!!');
+        })
+    });
+}
+
+var transthethis = (tr) =>{
+    tr.forEach((t)=>{
+        getsamejson(t.spender,(err,speobj)=>{
+            if(err)throw err;
+            getsamejson(t.rec,(err,recobj)=>{
+                if(err)throw err;
+                let specash = parseInt(speobj.userSRC.User.cash)
+                speobj.userSRC.User.cash = specash - parseInt(t.hm,10);
+                console.log(speobj.userSRC.User.cash)
+                let reccash = parseInt(recobj.userSRC.User.cash)
+                recobj.userSRC.User.cash = reccash + parseInt(t.hm,10);
+                writeintojson('./user/user_'+speobj+'.json',speobj,(err)=>{
+                    if(err) throw err;
+                })
+                writeintojson('./user/user_'+recobj+'.json',recobj,(err)=>{
+                    if(err)throw err;
+                })
+            })
+        })
+    })
+}
+
+var ckcrechash = (recHash,cb)=>{
+    usersalthash.forEach((ousr)=>{
+        if(ousr.hash===recHash){
+            console.log(ousr.hash);
+            cb(null);
+        }
+    })
+}
+
+
+
+var checkaddress=(password,cb)=>{
+    usersalthash.forEach((curs,indx)=>{
+        let zws = CryptoJS.SHA256(password + curs.salt).toString()
+        if(curs.hash === zws){
+            cb(null,zws);
+        }
+    })
+}
+
+var getsamejson=(addhash,cb)=>{
+    let path = './user/user_'+addhash+'.json'
+    console.log(path)
+    readfromjson(path,(err,obj)=>{
+        if(err)throw err;
+        cb(null,obj);
+    })
+    
+}
+
+var checkalldata = (receiveduserData)=>{
+    var addhash = receiveduserData.userSRC.userinfo.address.Hash;
+    getsamejson(addhash,(err,obj)=>{
+        if(err)throw err;
+        if(JSON.stringify(receiveduserData)===JSON.stringify(obj)){
+            return false;
+        }else{
+            if(receiveduserData.userSRC.userinfo.cash!==obj.userSRC.userinfo.cash){
+                return false;
+            }else{
+                return false;
+            }
+        }
+    });
+}
+
+var checkifnew = (address)=>{
+    for(let i=0;i<usersalthash.length;i++){
+        if(usersalthash[i]===address){
+            return false;
+        }
+    }
+    return true;
+}
+
+var verifyKey = (pubKey,sign,data)=>{
+    var key = new NodeRSA();
+    if(key.isEmpty()){
+        key.importKey(pubKey);
+        console.log(key);
+        if(key.verify(JSON.stringify(CryptoJS.SHA256(data).toString()),sign)){
+            return true;
+        }else{
+            return false;
+        }
+    }
+}
+
+var decryptedPrivKey = (encrypted_json_str, passphrase)=>{
+    var r_pass_base64 = passphrase.toString("base64");
+    var CryptoJS = aescryp.CryptoJS;
+    var JsonFormatter = aescryp.JsonFormatter;
+    var decrypted = CryptoJS.AES.decrypt(encrypted_json_str, r_pass_base64, { format: JsonFormatter });
+    console.log(decrypted); 
+    var decrypted_str = CryptoJS.enc.Utf8.stringify(decrypted);
+    console.log("decrypted string: " + decrypted_str);
+}
 var makekeyPrivAgain = (privateStr)=>{
     var upkey = new NodeRSA(privateStr);
 }
@@ -212,7 +359,7 @@ var createSign = (key,userJson) =>{
 var getfilepath = (address,cb) =>{
     var path = './user/user_'+address+'.json';
     console.log(path);
-    fs.writeFile(path,"sadasdasd",(err)=>{
+    fs.writeFile(path,"",(err)=>{
         if(err)throw err;
         console.log("File created");
         cb(null,path);
@@ -220,7 +367,7 @@ var getfilepath = (address,cb) =>{
 }
 
 var getaddress = (password) =>{
-    var salt = crypto.randomBytes(16);
+    var salt = crypto.randomBytes(16).toString();
     return {
         Hash:CryptoJS.SHA256(password + salt).toString(),
         salt:salt
@@ -242,7 +389,6 @@ var createPassphrase = (passphrase,cb) => {
 
     crypto.pbkdf2(passphrase, salt, iterations, keyByteLength, 'sha256', function (err, bytes) {
         x = bytes.toString('hex')
-        console.log(x+' x');
         var passdata = { 
             key:x,
             salt:salt,
@@ -256,53 +402,13 @@ var createPassphrase = (passphrase,cb) => {
 
 var encryptPrivKey = (keyphrase,privatKey,cb) => {
 
-    var crypt = new chilkat.Crypt2();
-
-    var success = crypt.UnlockComponent("Anything for 30-day trial");
-    if (success !== true) {
-        console.log(crypt.LastErrorText);
-        return;
-    }
-    crypt.CryptAlgorithm = "aes";
-
-    crypt.CipherMode = "ctr";
-
-    crypt.KeyLength = 256;
-    crypt.EncodingMode = "hex";
-
-    crypto.randomBytes(16);
-    var ivHex = crypto.randomBytes(16);
-    crypt.SetEncodedIV(ivHex,"hex");
-
-    var keyHex = keyphrase;
-    crypt.SetEncodedKey(keyHex,"hex");
-
-    var encStr = crypt.EncryptStringENC(privatKey);
-    console.log(encStr+ '  ency');
-
-    var encPrivKey = {
-        encPrivKey:encStr,
-        Algo:crypt.CryptAlgorithm,
-        Mode:crypt.CipherMode,
-        Lenght:crypt.KeyLength,
-        EncMode:crypt.EncodingMode,
-        iv:ivHex
-    }
-    cb(null,encPrivKey);
-    
-
-    /*
-    var decrypt = new chilkat.Crypt2();
-    decrypt.CryptAlgorithm = "aes";
-    decrypt.CipherMode = "ctr";
-    decrypt.KeyLength = 128;
-    decrypt.EncodingMode = "hex";
-    decrypt.SetEncodedIV(ivHex,"hex");
-    decrypt.SetEncodedKey(keyHex,"hex");
-
-    //  Now decrypt:
-    var decStr = decrypt.DecryptStringENC(encStr);
-    console.log(decStr+ '  2');*/
+    var r_pass_base64 = keyphrase.toString("base64");
+    console.log(r_pass_base64);
+    var JsonFormatter = aescryp.JsonFormatter;
+    var CryptoJS = aescryp.CryptoJS;
+    var encrypted = CryptoJS.AES.encrypt(privatKey, r_pass_base64, { format: JsonFormatter });
+    var encrypted_json_str = encrypted.toString();
+    cb(null,encrypted_json_str);
 }
 
 
@@ -340,6 +446,9 @@ var initMessageHandler = (ws) => {
                 break;
             case MessageType.RESPONSE_USERDATA:
                 handleUserdataResponse(message);
+                break;
+            case MessageType.RESPONSE_TRANSACTION:
+                handleTransactionResponse(message)
                 break;
         }
     });
@@ -407,10 +516,40 @@ var connectToPeers = (newPeers) => {
     });
 };
 
+var handleTransactionResponse = (message) =>{
+    var receivedTrans = JSON.parse(message.data);
+    if(transactions.length<receivedTrans.index){
+        ckcrechash(receivedTrans.spender,(err)=>{
+            if(err)throw err;
+            ckcrechash(receivedTrans.rec,(err)=>{
+                if(err)throw err;
+                getsamejson(receivedTrans.spender,(err,spobj)=>{
+                    if(err)throw err;
+                    let xcask = obj.userSRC.User.cash
+                    if(receivedTrans.hm<=xcask){
+                        transactions.push({
+                            receivedTrans
+                        })}})})})}}
 
 var handleUserdataResponse = (message) => {
+    //              verify file
     var receiveduserData = JSON.parse(message.data);
     console.log(receiveduserData);
+    //look if data correct
+    if(checkifnew(receiveduserData.userSRC.User.address)){
+        if(verifyKey(receiveduserData.userSRC.publicKey.PublicKey,receiveduserData.Usersign,receiveduserData.userSRC)){
+            if(receiveduserData.userSRC.User.cash===0){
+                createnewUserFile(receiveduserData);
+                broadcast(responsenewUser(receiveduserData))
+            }else{
+                console.log('cash not good')
+            }
+        }else{
+            console.log('Signature not good');
+        }
+    }else{ 
+        console.log('Received Userdata already existing or corrupted. Do nothing');
+    }
 }
 
 
@@ -487,6 +626,11 @@ var responsenewUser = (userInfo) => ({
     'data': JSON.stringify(userInfo)
 })
 
+var responseTrans = (trans)=>({
+    'type': MessageType.RESPONSE_TRANSACTION,
+    'data': JSON.stringify(trans)
+})
+
 var write = (ws, message) => ws.send(JSON.stringify(message));
 var broadcast = (message) => sockets.forEach(socket => write(socket, message));
 
@@ -533,32 +677,67 @@ var writecontentbcf = (collbuk)=>{
 var writeintojson = (filepath,data,cb)=>{
     jsonfl.writeFile(filepath,data,{spaces: 2, EOL: '\r\n'},(err)=>{
         if(err)throw err;
-        console.log("super")
+        //console.log("super")
         cb(null);
     })
+} 
+
+var readfromjson = (filepath,cb) =>{
+    jsonfl.readFile(filepath,(err,obj)=>{
+        if(err)throw err;
+        cb(null,obj);
+    })
+}
+
+var readAllFiles = (dirname, onFileContent, onError)=> {
+    fs.readdir(dirname, function(err, filenames) {
+      if (err) {
+        onError(err);
+        return;
+      }
+      filenames.forEach(function(filename) {
+        fs.readFile(dirname + filename,'utf-8', function(err, content) {
+          if (err) {
+            onError(err);
+            return;
+          }
+          onFileContent(filename, content);
+        });
+      });
+    });
 }
 
 connectToPeers(initialPeers);
 initHttpServer();
 initP2PServer();
-/*
+
 readcontentbcf((err,data)=>{
-    console.log(data);
+    console.log(data.length);
     blockchain = data;
 })
 
-readpeers((err,obj)=>{
+/*readpeers((err,obj)=>{
+    if(err){throw err};
     console.log(obj.length);
     console.log(obj[0]);
-    if(err){throw err};
     if(obj.length===0){console.log("no peers found!")}
         else{for(var i= 0; i < obj.length;i++){
             console.log(obj[i]);
             connectToPeers([obj[i]]);
         }}
-})
-*/
+})*/
 
+readAllFiles('./user/', (filename,content)=>{
+    //console.log(content);
+    var UJ = JSON.parse(content);
+    let me = UJ.userSRC.User.address
+    usersalthash.push({
+        salt:me.salt,
+        hash:me.Hash
+    })
+},(err,content) =>{
+    throw err;
+})
 
 
 
