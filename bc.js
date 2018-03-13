@@ -1,6 +1,5 @@
 
 'use strict';
-//Externe Module
 var CryptoJS = require("crypto-js");
 var express = require("express");
 var bodyParser = require('body-parser');
@@ -17,6 +16,9 @@ var NodeRSA = require('node-rsa');
 var os = require('os');
 var crypto = require('crypto');
 var aescryp = require('node-cryptojs-aes')
+var http = require('http')
+
+http.globalAgent.maxSockets = 20;
 
 
 var bcfile = './tmp/coinsafe.json';
@@ -74,7 +76,6 @@ var initHttpServer = () => {
     app.use(express.static('public'));
     app.use(bodyParser.json());
     app.use(cors());
-    //HTTP Functions
     app.get('/blocks', function(req, res) { 
         res.send(JSON.stringify(blockchain));
     });
@@ -137,13 +138,13 @@ var initHttpServer = () => {
             }
         )})
     })
-    app.post('/cCron',urlencodedParser, (req,res)=>{
+
+    app.post('/cU',urlencodedParser, (req,res)=>{
         //to who and how much + password to json file
         console.log('---------------------------------------------------------------')
         checkaddress(req.body.password,(err,hash)=>{
             if(err){
                 console.log('PW incorrect!!!°.°');
-                res.send('Incorrect PW')
             };
             console.log('Spender:   '+hash)
             ckcrechash(req.body.address,(err)=>{
@@ -158,46 +159,50 @@ var initHttpServer = () => {
                             cnt+=c;
                         }
                     })
-                    console.log(xcask-cnt)
                     let wmon = parseInt(req.body.cash)
-                    console.log(cnt+wmon)
                     if((wmon+cnt)<=xcask){
-                        cnt = 0;
+                        //cnt = 0;
                         if(transactions.length<10){
+                            console.log('Curr Coin:             '+(xcask-cnt))
+                            console.log('Already Trans Cash:    '+(cnt+wmon))
                             transactions.push({
                                 spender:hash,
                                 rec:req.body.address,
                                 hm:req.body.cash
                             })
                             //f
-                            console.log('NEW TRANSACTION: ----SPENDER---- '+hash+'  ----REC---- '+req.body.address+'  ----HM---- '+req.body.cash)
+                            console.log('1NEW TRANSACTION:\n\rSPENDER---- '+hash+'\n\rREC----     '+req.body.address+'\n\rHM----      '+req.body.cash)
                             broadcast(responseTrans({
                                 spender:hash,
                                 rec:req.body.address,
                                 hm:req.body.cash
-                            }))
-                            res.send('VeryYes')
-                        }else{
-                            console.log(transactions)
-                            let cunBlck = generateNextBlock(transactions);
-                            addBlock(cunBlck);
-                            broadcast(responseLatestMsg());
-                            transthethis(transactions);
-                            console.log('BLOCK ADDED: '+JSON.stringify(cunBlck))
-                            transactions.length=0;
-                            transactions.push({
-                                spender:hash,
-                                rec:req.body.address,
-                                hm:req.body.cash
-                            })
-                            console.log('NEW TRANSACTION: ----SPENDER---- '+hash+'  ----REC---- '+req.body.address+'  ----HM---- '+req.body.cash)
-                            broadcast(responseTrans({
-                                spender:hash,
-                                rec:req.body.address,
-                                hm:req.body.cash,
-                                index:transactions.length
                             }))
                             res.send('Ja');
+                        }else{
+                            
+                            console.log('Curr Coin:             '+(xcask-cnt))
+                            cnt =0;
+                            console.log('Already Trans Cash:    '+(cnt+wmon))
+                            //console.log(transactions)
+                            let cunBlck = generateNextBlock(transactions);
+                            addBlock(cunBlck);
+                            console.log('BLOCK ADDED: '+JSON.stringify(cunBlck))
+                            broadcast(responseLatestMsg());
+                            if(err)throw err;
+                                //console.log('guc')
+                                transactions.length=0;
+                                transactions.push({
+                                    spender:hash,
+                                    rec:req.body.address,
+                                    hm:req.body.cash
+                                })
+                                console.log('NEW TRANSACTION:\n\rSPENDER---- '+hash+'\n\rREC----     '+req.body.address+'\n\rHM----      '+req.body.cash)
+                                broadcast(responseTrans({
+                                    spender:hash,
+                                    rec:req.body.address,
+                                    hm:req.body.cash,
+                                    index:transactions.length
+                                }))
                         }
                     }else{
                         console.log('noe')
@@ -207,6 +212,15 @@ var initHttpServer = () => {
             })
         })
     })
+
+
+
+    app.post('/ididitanddidnothingelseinmylife',urlencodedParser, (req,res)=>{
+        //gets Data(hash, transaction, time when created)
+        //controll if succescfull 
+        //if succesfull sends someonedidit!
+    })
+
     /*app.post('/mineBlock',urlencodedParser, (req, res) => {
         console.log(req.body.name);
         var newBlock = generateNextBlock(req.body.name +":"+req.body.val);
@@ -241,28 +255,49 @@ var createnewUserFile = (recobj)=>{
     });
 }
 
+
 var transthethis = (tr) =>{
-    tr.forEach((t)=>{
-        getsamejson(t.spender,(err,speobj)=>{
+    for(let i=0;i<tr.length;i++){
+        getsamejson(tr[i].spender,(err,speobj)=>{
             if(err)throw err;
-            console.log('spe')
-            getsamejson(t.rec,(err,recobj)=>{
-                console.log('rec')
+            let y = parseInt(speobj.userSRC.User.cash) - parseInt(tr[i].hm)
+            console.log(y+'spent')
+            speobj.userSRC.User.cash = y
+
+            writeintojson('./user/user_'+tr[i].spender+'.json',speobj,(err)=>{
+                if(err)console.log(err);
+                console.log('ges')
             })
         })
-    })
+        getsamejson(tr[i].rec,(err,recobj)=>{
+            if(err)throw err;
+            let y = parseInt(recobj.userSRC.User.cash) + parseInt(tr[i].hm)
+            console.log(y+'gained')
+            recobj.userSRC.User.cash = y
+
+            //console.log(recobj.userSRC.User.cash)
+
+            writeintojson('./user/user_'+tr[i].rec+'.json',recobj,(err)=>{
+                if(err)throw err;
+                console.log('ges')
+            })
+        })
+    }
 }
+
+
 
 var ckcrechash = (recHash,cb)=>{
     usersalthash.forEach((ousr)=>{
         if(ousr.hash===recHash){
-            console.log(ousr.hash);
+            console.log('REC:       '+ousr.hash);
             cb(null);
-        }else{
-            cb('nop')
+            return;
         }
     })
 }
+
+
 
 var checkaddress=(password,cb)=>{
     usersalthash.forEach((curs,indx)=>{
@@ -276,10 +311,11 @@ var checkaddress=(password,cb)=>{
 
 var getsamejson=(addhash,cb)=>{
     let path = './user/user_'+addhash+'.json'
-    console.log(path)
+    //console.log(path)
     readfromjson(path,(err,obj)=>{
-        if(err)throw err;
+        if(err){cb('xD');return;}
         cb(null,obj);
+        return;
     })
     
 }
@@ -309,25 +345,6 @@ var checkifnew = (address)=>{
     return true;
 }
 
-var getfilepath = (address,cb) =>{
-    var path = './user/user_'+address+'.json';
-    console.log(path);
-    fs.writeFile(path,"",(err)=>{
-        if(err)throw err;
-        console.log("File created");
-        cb(null,path);
-    })
-}
-
-var getaddress = (password) =>{
-    var salt = crypto.randomBytes(16).toString();
-    return {
-        Hash:CryptoJS.SHA256(password + salt).toString(),
-        salt:salt
-    }
-}
-
-//Crypto functions
 var verifyKey = (pubKey,sign,data)=>{
     var key = new NodeRSA();
     if(key.isEmpty()){
@@ -358,6 +375,14 @@ var createSign = (key,userJson) =>{
     return key.sign(JSON.stringify(CryptoJS.SHA256(userJson).toString()));
 }
 
+var getaddress = (password) =>{
+    var salt = crypto.randomBytes(16).toString();
+    return {
+        Hash:CryptoJS.SHA256(password + salt).toString(),
+        salt:salt
+    }
+}
+
 var nodeRSAKey = (cb) => {
     var key =new NodeRSA({b: 512});
     cb(null,key);
@@ -383,7 +408,9 @@ var createPassphrase = (passphrase,cb) => {
     });
 }
 
+
 var encryptPrivKey = (keyphrase,privatKey,cb) => {
+
     var r_pass_base64 = keyphrase.toString("base64");
     console.log(r_pass_base64);
     var JsonFormatter = aescryp.JsonFormatter;
@@ -394,7 +421,6 @@ var encryptPrivKey = (keyphrase,privatKey,cb) => {
 }
 
 
-//Peer Functions
 var initP2PServer = () => {
     var server = new WebSocket.Server({port: p2p_port});
     server.on('connection', ws => initConnection(ws));
@@ -447,7 +473,6 @@ var initErrorHandler = (ws) => {
 };
 
 
-//Blockchain Fucntions
 var generateNextBlock = (blockData) => {
     var previousBlock = getLatestBlock();
     var nextIndex = previousBlock.index + 1;
@@ -455,6 +480,7 @@ var generateNextBlock = (blockData) => {
     var nextHash = calculateHash(nextIndex, previousBlock.hash, nextTimestamp, blockData);
     return new Block(nextIndex, previousBlock.hash, nextTimestamp, blockData, nextHash);
 };
+
 
 var calculateHashForBlock = (block) => {
     return calculateHash(block.index, block.previousHash, block.timestamp, block.data);
@@ -489,7 +515,6 @@ var isValidNewBlock = (newBlock, previousBlock) => {
     return true;
 };
 
-//Peer Message Functions
 var connectToPeers = (newPeers) => {
     newPeers.forEach((peer) => {
         var ws = new WebSocket(peer);
@@ -499,6 +524,7 @@ var connectToPeers = (newPeers) => {
         });
     });
 };
+
 var handleTransactionResponse = (message) =>{
     var receivedTrans = JSON.parse(message.data);
     if(transactions.length<receivedTrans.index){
@@ -534,6 +560,8 @@ var handleUserdataResponse = (message) => {
         console.log('Received Userdata already existing or corrupted. Do nothing');
     }
 }
+
+
 var handleBlockchainResponse = (message) => {
     var receivedBlocks = JSON.parse(message.data).sort((b1, b2) => (b1.index - b2.index));
     var latestBlockReceived = receivedBlocks[receivedBlocks.length - 1];
@@ -562,7 +590,8 @@ var handleBlockchainResponse = (message) => {
     } else {
         console.log('received blockchain is not longer than received blockchain. Do nothing');
     }
-}
+};
+
 var replaceChain = (newBlocks) => {
     if (isValidChain(newBlocks) && newBlocks.length > blockchain.length) {
         console.log('Received blockchain is valid. Replacing current blockchain with received blockchain');
@@ -572,6 +601,7 @@ var replaceChain = (newBlocks) => {
         console.log('Received blockchain invalid');
     }
 };
+
 var isValidChain = (blockchainToValidate) => {
     if (JSON.stringify(blockchainToValidate[0]) !== JSON.stringify(getGenesisBlock())) {
         return false;
@@ -586,6 +616,8 @@ var isValidChain = (blockchainToValidate) => {
     }
     return true;
 };
+
+
 
 var getLatestBlock = () => blockchain[blockchain.length - 1];
 var queryChainLengthMsg = () => ({'type': MessageType.QUERY_LATEST});
@@ -611,7 +643,24 @@ var responseTrans = (trans)=>({
 var write = (ws, message) => ws.send(JSON.stringify(message));
 var broadcast = (message) => sockets.forEach(socket => write(socket, message));
 
-//File Functions
+
+var getfilepath = (address,cb) =>{
+    var path = './user/user_'+address+'.json';
+    console.log(path);
+    fs.writeFile(path,"",(err)=>{
+        if(err)throw err;
+        console.log("File created");
+        cb(null,path);
+    })
+}
+
+var craetefile = (path,cb)=>{
+    fs.writeFile(path,'',(err)=>{
+        if(err)cb(err);return;
+        cb(null,path)
+    })
+}
+
 var readcontdebug = (cb) =>{
     fs.readFile('./tmp/hcoinsave.txt',(err,data)=> {
         if(err) throw err;
@@ -641,22 +690,26 @@ var readpeers = (snobu)=>{
  
 var readcontentbcf = (cb) =>{
     jsonfl.readFile(bcfile,(err,obj)=>{
-        if(err) throw err;
+        if(err) cb(err);
         cb(null,obj);
     })
 }
 var writecontentbcf = (collbuk)=>{
     jsonfl.writeFile(bcfile,blockchain,(err)=>{
-        if(err) throw err;
+        if(err) {
+            console.log('create bcfile');
+
+        }
         collbuk(null);
     })
 }
 
 var writeintojson = (filepath,data,cb)=>{
     jsonfl.writeFile(filepath,data,{spaces: 2, EOL: '\r\n'},(err)=>{
-        if(err)throw err;
-        //console.log("super")
+        if(err)cb(err);
+        console.log("super")
         cb(null);
+        return;
     })
 } 
 
@@ -685,10 +738,18 @@ var readAllFiles = (dirname, onFileContent, onError)=> {
     });
 }
 
-readcontentbcf((err,data)=>{
-    console.log(data.length);
+connectToPeers(initialPeers);
+initHttpServer();
+initP2PServer();
+
+/*readcontentbcf((err,data)=>{
+    if(err)craetefile(bcfile,(err)=>{
+        if(err)throw err;
+    })
+    if(data===''){return}
     blockchain = data;
-})
+    console.log(blockchain)
+})*/
 
 /*readpeers((err,obj)=>{
     if(err){throw err};
@@ -702,7 +763,7 @@ readcontentbcf((err,data)=>{
 })*/
 
 readAllFiles('./user/', (filename,content)=>{
-    //console.log(content);
+    //console.log(filename);
     var UJ = JSON.parse(content);
     let me = UJ.userSRC.User.address
     usersalthash.push({
@@ -713,9 +774,5 @@ readAllFiles('./user/', (filename,content)=>{
     throw err;
 })
 
-
-connectToPeers(initialPeers);
-initHttpServer();
-initP2PServer();
 
 
