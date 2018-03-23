@@ -141,12 +141,10 @@
         });
     }
     function transCoins(){
-      alert('Wird gesendet');
       var cash1 = document.getElementById('hc').value;
       var towho = document.getElementById('address').value;
       var pw = document.getElementById('pass').value;
       var mess = document.getElementById('message').value;
-      alert("http://"+oip+":3001/cU");
       $.ajax({
         type: 'POST',
         url: '/cU',
