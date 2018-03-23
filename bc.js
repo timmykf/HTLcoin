@@ -103,7 +103,7 @@ var initHttpServer = () => {
                     });
                     var userinfo = {
                         address:add,
-                        cash:1000
+                        cash:0
                     }
                     var publicK = {
                         PublicKey:pk,
@@ -145,12 +145,20 @@ var initHttpServer = () => {
         checkaddress(req.body.password,(err,hash)=>{
             if(err){
                 console.log('PW incorrect!!!°.°');
+                res.send('nopre')
+                return
             };
-            console.log('Spender:   '+hash)
             ckcrechash(req.body.address,(err)=>{
-                if(err)throw err;
+                if(err){
+                    console.log('Receiveraddress wrong!')
+                    res.send('nopre')
+                    return
+                };
                 getsamejson(hash,(err,obj)=>{
-                    if(err)throw err;
+                    if(err){
+                        throw err;
+                        return;
+                    }
                     let xcask = obj.userSRC.User.cash
                     let cnt=0;
                     transactions.forEach((t)=>{
@@ -162,22 +170,27 @@ var initHttpServer = () => {
                     let wmon = parseInt(req.body.cash)
                     if((wmon+cnt)<=xcask){
                         //cnt = 0;
+                        console.log('Spender:   '+hash)
+                        console.log('REC:       '+req.body.address)
+                        console.log('Curr Coin:             '+(xcask-cnt))
+                        console.log('Already Trans Cash:    '+(cnt+wmon))
                         if(transactions.length<10){
-                            console.log('Curr Coin:             '+(xcask-cnt))
-                            console.log('Already Trans Cash:    '+(cnt+wmon))
+                            
                             transactions.push({
                                 spender:hash,
                                 rec:req.body.address,
                                 hm:req.body.cash
                             })
                             //f
-                            console.log('1NEW TRANSACTION:\n\rSPENDER---- '+hash+'\n\rREC----     '+req.body.address+'\n\rHM----      '+req.body.cash)
+                            console.log('NEW TRANSACTION:\n\rSPENDER---- '+hash+'\n\rREC----     '+req.body.address+'\n\rHM----      '+req.body.cash)
                             broadcast(responseTrans({
                                 spender:hash,
                                 rec:req.body.address,
-                                hm:req.body.cash
+                                hm:req.body.cash,
+                                index:transactions.length
                             }))
                             res.send('Ja');
+                            return;
                         }else{
                             
                             console.log('Curr Coin:             '+(xcask-cnt))
@@ -188,21 +201,27 @@ var initHttpServer = () => {
                             addBlock(cunBlck);
                             console.log('BLOCK ADDED: '+JSON.stringify(cunBlck))
                             broadcast(responseLatestMsg());
-                            if(err)throw err;
-                                //console.log('guc')
-                                transactions.length=0;
-                                transactions.push({
-                                    spender:hash,
-                                    rec:req.body.address,
-                                    hm:req.body.cash
+                            transthethis(transactions,(err,newtarr)=>{
+                                console.log(newtarr)
+                                ajust_jsonfl(newtarr,()=>{
+                                    transactions.length=0;
+                                    transactions.push({
+                                        spender:hash,
+                                        rec:req.body.address,
+                                        hm:req.body.cash
+                                    })
+                                    console.log('NEW TRANSACTION:\n\rSPENDER---- '+hash+'\n\rREC----     '+req.body.address+'\n\rHM----      '+req.body.cash)
+                                    broadcast(responseTrans({
+                                        spender:hash,
+                                        rec:req.body.address,
+                                        hm:req.body.cash,
+                                        index:transactions.length
+                                    }))
+                                return;
                                 })
-                                console.log('NEW TRANSACTION:\n\rSPENDER---- '+hash+'\n\rREC----     '+req.body.address+'\n\rHM----      '+req.body.cash)
-                                broadcast(responseTrans({
-                                    spender:hash,
-                                    rec:req.body.address,
-                                    hm:req.body.cash,
-                                    index:transactions.length
-                                }))
+                            });
+                                //console.log('guc')
+                            
                         }
                     }else{
                         console.log('noe')
@@ -256,43 +275,114 @@ var createnewUserFile = (recobj)=>{
 }
 
 
-var transthethis = (tr) =>{
-    for(let i=0;i<tr.length;i++){
-        getsamejson(tr[i].spender,(err,speobj)=>{
+var ajust_jsonfl = (trans,cb)=>{
+    trans.forEach((t,inx,arr)=>{
+        getsamejson(t.add,(err,obj)=>{
             if(err)throw err;
-            let y = parseInt(speobj.userSRC.User.cash) - parseInt(tr[i].hm)
-            console.log(y+'spent')
-            speobj.userSRC.User.cash = y
-
-            writeintojson('./user/user_'+tr[i].spender+'.json',speobj,(err)=>{
-                if(err)console.log(err);
-                console.log('ges')
+            let xcask = obj.userSRC.User.cash
+            console.log(xcask)
+            obj.userSRC.User.cash = parseFloat(xcask)+parseFloat(t.coins)
+            console.log(obj.userSRC.User.cash)
+            writeintojson('./user/user_'+t.add+'.json',obj,(err)=>{
+                if(err)throw err;
+                if(inx===arr.length-1){
+                    cb(null)
+                    return
+                }
+                return
             })
         })
-        getsamejson(tr[i].rec,(err,recobj)=>{
-            if(err)throw err;
-            let y = parseInt(recobj.userSRC.User.cash) + parseInt(tr[i].hm)
-            console.log(y+'gained')
-            recobj.userSRC.User.cash = y
+        
+    })
+}
 
-            //console.log(recobj.userSRC.User.cash)
-
-            writeintojson('./user/user_'+tr[i].rec+'.json',recobj,(err)=>{
-                if(err)throw err;
-                console.log('ges')
+var transthethis = (tr,cb) =>{
+    let coii_t=0;
+    let tptr = []
+    console.log(tr)
+    tr.forEach((t,inx,arr)=>{
+        getmethis(tptr,t.spender,(err,index)=>{
+            if(err){
+                tptr[index].coins = parseFloat(tptr[index].coins) - t.hm
+                coii_t++
+                return
+            }
+            let whatyl= -t.hm
+            tptr.push({
+                add:t.spender,
+                coins:whatyl
             })
+            coii_t++
+            return
+        })
+        getmethis(tptr,t.rec,(err,index)=>{
+            if(err){
+                tptr[index].coins = parseFloat(tptr[index].coins) + parseFloat(t.hm)
+                coii_t++
+                return
+            }
+            let whatyl= t.hm
+            tptr.push({
+                add:t.rec,
+                coins:whatyl
+            })
+            coii_t++
+            return
+        })
+        if(coii_t===20){
+            cb(null,tptr)
+        }
+    })
+}
+
+var getindexof=(tmpa,address,cb)=>{
+    let coii=0;
+    tmpa.forEach((t,inx)=>{
+        if(t.add===address){
+            console.log('index found')
+            coii++;
+            cb(null,inx)
+            return;
+        }
+        if(coii===0 && tmpa.length-1===inx){
+            cb('spezilist')
+            return;
+        }
+    })
+}
+
+var getmethis=(tmpa,add,cb)=>{
+    let coii=0;
+    if(tmpa.length === 0){
+        cb(null)
+        return;
+    }else{
+        tmpa.forEach((t,i)=>{
+            if(t.add===add){
+                coii++;
+                cb('lul',i)
+                return;
+            }
+            if(i===tmpa.length-1 && coii===0){
+                cb(null)
+                return;
+            }
         })
     }
 }
 
-
-
 var ckcrechash = (recHash,cb)=>{
-    usersalthash.forEach((ousr)=>{
+    let coii=0;
+    usersalthash.forEach((ousr,indx)=>{
         if(ousr.hash===recHash){
-            console.log('REC:       '+ousr.hash);
+            //console.log('REC:       '+ousr.hash);
+            coii++;
             cb(null);
             return;
+        }
+        if(indx===usersalthash.length-1 && coii===0){
+            cb('faillol')
+            return
         }
     })
 }
@@ -300,10 +390,18 @@ var ckcrechash = (recHash,cb)=>{
 
 
 var checkaddress=(password,cb)=>{
-    usersalthash.forEach((curs,indx)=>{
+    let coii=0;
+    usersalthash.forEach((curs,indx,arr)=>{
         let zws = CryptoJS.SHA256(password + curs.salt).toString()
+        //console.log(indx)
         if(curs.hash === zws){
+            coii++;
+            
             cb(null,zws);
+            return;
+        }
+        if(indx === arr.length-1 && coii===0){
+            cb('faillol')
             return;
         }
     })
@@ -715,8 +813,9 @@ var writeintojson = (filepath,data,cb)=>{
 
 var readfromjson = (filepath,cb) =>{
     jsonfl.readFile(filepath,(err,obj)=>{
-        if(err)throw err;
+        if(err){cb('lul');return};
         cb(null,obj);
+        return;
     })
 }
 
