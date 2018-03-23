@@ -21,13 +21,22 @@ var http = require('http')
 http.globalAgent.maxSockets = 20;
 
 
+var NodeAdminData={
+    pw:'krisp'
+}
+
 var bcfile = './tmp/coinsafe.json';
 var debugfl = './tmp/hcoinsave.txt';
 var peersfl = './tmp/standpeers.json';
 
-let countdbginfo;
+let countdbginfo=0;
+
+let blockcnt=0;
+let blockcrtcnt=0;
+let querycnt=0;
 var task = cron.schedule('*/3 * * * *',function(){
-    console.log("tmpsave"+":"+countdbginfo+'   '+new Date().getTime() / 1000);
+    console.log("tmpsave"+":"+countdbginfo+'   '+new Date().getTime() / 1000+'   Blocks created:'+blockcnt+' from this Node:'+blockcrtcnt+'  Chain queried:'+querycnt);
+    countdbginfo++;
 });
 
 task.start();
@@ -82,6 +91,44 @@ var initHttpServer = () => {
     app.get('/',(req,res)=>{
         console.log('Requested Site:'+ JSON.stringify(req.headers))
         res.render('homepage.html');
+    })
+    app.post('/Login',urlencodedParser, (req,res)=>{
+        let pass = req.body.password;
+        if(pass===NodeAdminData.pw){
+            console.log('Admin logged in')
+            res.render('adminpage.html')
+            return
+        }
+        checkaddress(pass,(err,hash)=>{
+            if(err){
+                console.log('couldnt find user')
+                res.status(404).send('nope')
+                return
+            }
+            getsamejson(hash,(err,obj)=>{
+                if(err){
+                    res.send('noe')
+                    return 
+                }
+                let passobj = obj.userSRC.PassData;
+                let buff = new Buffer.from(passobj.salt)
+                let itits = parseInt(passobj.ilteration,10)
+                getPassphrase(pass,itits,buff,parseInt(passobj.keyByteLength),(err,passdata)=>{
+                    if(err){
+                        res.status(404).send('geht nid')
+                        return
+                    }
+                    decryptedPrivKey(JSON.stringify(obj.userSRC.encPrivKeyData),passdata,(err,pikey)=>{
+                        if(err){
+                            console.log('nö')
+                            return
+                        }
+                        console.log(pikey)
+                    })
+                })
+            })
+
+        })
     })
     app.post('/CreateUser',urlencodedParser , (req,res)=>{
         var pass = req.body.passwort;
@@ -456,14 +503,13 @@ var verifyKey = (pubKey,sign,data)=>{
     }
 }
 
-var decryptedPrivKey = (encrypted_json_str, passphrase)=>{
+var decryptedPrivKey = (encrypted_json_str, passphrase,cb)=>{
     var r_pass_base64 = passphrase.toString("base64");
     var CryptoJS = aescryp.CryptoJS;
     var JsonFormatter = aescryp.JsonFormatter;
-    var decrypted = CryptoJS.AES.decrypt(encrypted_json_str, r_pass_base64, { format: JsonFormatter });
-    console.log(decrypted); 
+    var decrypted = CryptoJS.AES.decrypt(encrypted_json_str, passphrase, { format: JsonFormatter });
     var decrypted_str = CryptoJS.enc.Utf8.stringify(decrypted);
-    console.log("decrypted string: " + decrypted_str);
+    cb(null,decrypted_str)
 }
 var makekeyPrivAgain = (privateStr)=>{
     var upkey = new NodeRSA(privateStr);
@@ -485,6 +531,19 @@ var nodeRSAKey = (cb) => {
     var key =new NodeRSA({b: 512});
     cb(null,key);
 } 
+
+var getPassphrase = (passphrase,iterations,salt,keyByteLength,cb)=>{
+
+    crypto.pbkdf2(passphrase,salt,iterations,keyByteLength,'sha256',(err,bytes)=>{
+        if(err){
+            cb('didnt work')
+            return
+        }
+        let rlkey = bytes.toString('hex')
+        cb(null,rlkey)
+        return
+    })
+}
 
 var createPassphrase = (passphrase,cb) => {
 
@@ -595,6 +654,8 @@ var addBlock = (newBlock) => {
         writecontentbcf((err)=>{
             console.log("Blockchain saved");
         });
+        blockcnt++;
+        blockcrtcnt++;
     }
 };
 
@@ -649,13 +710,42 @@ var handleUserdataResponse = (message) => {
                 createnewUserFile(receiveduserData);
                 broadcast(responsenewUser(receiveduserData))
             }else{
-                console.log('cash not good')
+                console.log('--cash not good')
+                return
             }
         }else{
-            console.log('Signature not good');
+            console.log('--Signature not good');
+            return
         }
     }else{ 
-        console.log('Received Userdata already existing or corrupted. Do nothing');
+        console.log('--Received Userdata already existing');
+        getsamejson(receiveduserData.userSRC.User.address,(err,obj)=>{
+            if(err){
+                console.log('--not possible')
+            }
+            if(receiveduserData.userSRC.publicKey.PublicKey===obj.userSRC.publicKey.PublicKey){
+                if(receiveduserData.Usersign===obj.Usersign){
+                    console.log('--Received data the same')
+                    return
+                }else{
+                    if(receiveduserData.userSRC.User.cash!==obj.userSRC.User.cash){
+                        if(verifyKey(receiveduserData.userSRC.publicKey.PublicKey,receiveduserData.Usersign,receiveduserData.userSRC)){
+                            console.log('--Received Userdata verified and will be updated')
+                            writeintojson('./user/user_'+receiveduserData.userSRC.User.address+'.json',obj,(err)=>{
+                                if(err)throw err;
+                                return
+                            })
+                        }
+                    }else{
+                        console.log('--Userfile'+receiveduserData.userSRC.User.address+' corrupted')
+                        return
+                    }
+                }
+            }else{
+                console.log('--PublicKey not matching')
+                return
+            }
+        })
     }
 }
 
@@ -673,10 +763,12 @@ var handleBlockchainResponse = (message) => {
             writecontentbcf((err)=>{
                 console.log("Blockchain saved");
             });
+            blockcnt++;
             writedebug("Blockchain:  " + latestBlockReceived.index + "     appended at " + new Date().getTime() / 1000 + "to Chain");
         } else if (receivedBlocks.length === 1) {
             console.log("We have to query the chain from our peer");
             broadcast(queryAllMsg());
+            querycnt++;
             writedebug("Blockchain:  " + getLatestBlock.index + "     sent at " + new Date().getTime() / 1000 + "to All User");
         } else {
             console.log("Received blockchain is longer than current blockchain");
@@ -872,6 +964,5 @@ readAllFiles('./user/', (filename,content)=>{
 },(err,content) =>{
     throw err;
 })
-
 
 

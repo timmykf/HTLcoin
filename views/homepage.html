@@ -160,6 +160,20 @@
         }
       });
     }
+    function loginUser(){
+      let pass = document.getElementById('loginPasswort').value
+      $.ajax({
+        type:'POST',
+        url:'/Login',
+        dataType:'json',
+        data:{
+          password:pass
+        },
+        success:function(){
+          console.log('done')
+        }
+      })
+    }
   </script>
 
   <div class="navbar navbar-expand-sm bg-dark navbar-dark">
@@ -169,7 +183,7 @@
     <div id="htllogo">
       <img src="htllogo.png" alt="logo" style="width:120px;">
     </div>
-    <form class="navbar-form navbar-right" role="search">
+    <form class="navbar-form navbar-right" role="search" onsubmit="loginUser();return false">
       <div class="form-group">
         <input type="text" class="form-control" id="loginBname" name="username" placeholder="Benutzername" required>
       </div>
@@ -205,7 +219,7 @@
       </div>
       <br>
       <div class="input-group">
-        <input type="text" name="address" placeholder="address" id="address" required>
+        <input type="text" name="address" placeholder="address" id="address" value="2c40177a46d45656d074787d27941189496cb69895d2a2e23b0d540abc77abec" required>
       </div>
       <br>
       <div class="input-group">
